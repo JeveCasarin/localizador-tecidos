@@ -140,8 +140,18 @@ elif page == "➕ Cadastrar / alterar":
                 st.rerun()
             except ValueError as error:
                 st.error(str(error))
-            except Exception:
-                st.error("Não foi possível confirmar a gravação. Atualize os dados antes de tentar novamente.")
+            except gspread.exceptions.APIError as error:
+                status = error.response.status_code
+                if status == 403:
+                    st.error("O Google recusou a gravação (HTTP 403). Compartilhe a planilha com o client_email da conta de serviço como Editor e confira se a aba ou as células estão protegidas.")
+                elif status == 401:
+                    st.error("Credencial recusada (HTTP 401). Confira a nova chave nos Secrets e reinicie o aplicativo.")
+                elif status == 429:
+                    st.error("Limite temporário do Google Sheets (HTTP 429). Aguarde um minuto e atualize os dados antes de tentar novamente.")
+                else:
+                    st.error(f"O Google Sheets retornou HTTP {status} ao salvar. Atualize os dados e confira se a referência foi gravada antes de repetir.")
+            except Exception as error:
+                st.error(f"Não foi possível confirmar a gravação ({type(error).__name__}). Atualize os dados e confira se a referência foi gravada antes de repetir.")
     if "saved_location" in st.session_state:
         st.success(st.session_state.pop("saved_location"))
 
