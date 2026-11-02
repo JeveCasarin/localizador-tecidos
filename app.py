@@ -6,7 +6,7 @@ import gspread
 import streamlit as st
 from google.oauth2.service_account import Credentials
 
-from locations import HEADERS, SHELVES, divisions, validate
+from locations import HEADERS, SHELVES, validate, location_key
 
 st.set_page_config(page_title="Localizador de Tecidos", page_icon="🧵", layout="centered")
 
@@ -38,9 +38,6 @@ def read_rows(sheet):
         reference, shelf, division = row
         clean = validate(reference, shelf, division)
         records.append(dict(zip(HEADERS, clean)))
-    refs = [r["Referencia"].casefold() for r in records]
-    if len(refs) != len(set(refs)):
-        raise ValueError("Há referências repetidas na planilha. Mantenha uma localização por referência.")
     return records
 
 
@@ -102,38 +99,46 @@ if page == "🔎 Buscar tecido":
         st.caption("Digite a referência e pressione Enter ou concluir no teclado do celular.")
 
 elif page == "➕ Cadastrar / alterar":
-    st.caption("Uma localização por referência. Uma divisão pode guardar várias referências. Para mover um tecido, escolha alterar e selecione sua referência.")
+    st.caption("Uma referência pode estar em várias localizações. Cadastre cada localização separadamente. Para mover um tecido, altere somente a localização desejada.")
     mode = st.radio("Operação", ["Cadastrar", "Alterar localização"], horizontal=False)
     if mode == "Alterar localização" and not records:
         st.info("Cadastre a primeira referência para poder alterar sua localização.")
     else:
         current = None
         if mode == "Alterar localização":
-            reference = st.selectbox("Referência", sorted(r["Referencia"] for r in records))
-            current = next(r for r in records if r["Referencia"] == reference)
+            reference = st.text_input("Referência que deseja alterar", key="edit_reference").strip()
+            candidates = [r for r in records if r["Referencia"].casefold() == reference.casefold()]
+            if candidates:
+                current = st.radio("Qual localização deseja alterar?", candidates,
+                    format_func=lambda r: f"{r['Prateleira']} / {r['Divisao']}")
+            elif reference:
+                st.info("Referência não encontrada. Use Cadastrar para adicionar.")
         else:
             reference = st.text_input("Referência", key="new_reference")
-        shelf = st.selectbox("Prateleira", SHELVES, index=SHELVES.index(current["Prateleira"]) if current else 0, key=f"shelf_{mode}_{reference if current else ''}")
-        options = divisions(shelf)
-        division = st.selectbox("Divisão", options, index=options.index(current["Divisao"]) if current and current["Divisao"] in options else 0, key=f"division_{mode}_{shelf}_{reference if current else ''}")
-        if st.button("Salvar localização", type="primary", use_container_width=True):
+        edit_key = "_".join(location_key(current)) if current else "new"
+        shelf = st.text_input("Prateleira", value=current["Prateleira"] if current else "", placeholder="Ex.: p1", key=f"shelf_{mode}_{edit_key}")
+        division = st.text_input("Divisão", value=current["Divisao"] if current else "", placeholder="Ex.: a1", key=f"division_{mode}_{edit_key}")
+        st.caption("P1 e P2: A1–A4 ou B1–B4. P3 a P14: A1–A5 ou B1–B5.")
+        if st.button("Salvar localização", type="primary", use_container_width=True, disabled=mode == "Alterar localização" and current is None):
             try:
                 row = validate(reference, shelf, division)
                 latest = read_rows(sheet)
-                existing = next((r for r in latest if r["Referencia"].casefold() == row[0].casefold()), None)
+                target = dict(zip(HEADERS, row))
+                existing = next((r for r in latest if location_key(r) == location_key(target)), None)
                 if mode == "Cadastrar":
                     if existing:
-                        raise ValueError("Essa referência já existe. Use Alterar localização.")
+                        raise ValueError("Essa referência já está cadastrada nessa prateleira e divisão. Informe outra localização.")
                     if not sheet.get_all_values():
                         sheet.update(range_name="A1:C1", values=[HEADERS], raw=True)
                     sheet.append_row(row, value_input_option="RAW", table_range="A:C")
                 else:
-                    if existing != current:
-                        raise ValueError("Essa referência foi alterada na planilha. Atualize os dados antes de salvar.")
+                    if existing and location_key(existing) != location_key(current):
+                        raise ValueError("Essa referência já está cadastrada na localização de destino.")
                     values = sheet.get_all_values()
-                    positions = [i for i, value in enumerate(values[1:], start=2) if value and value[0].strip().casefold() == row[0].casefold()]
+                    positions = [i for i, value in enumerate(values[1:], start=2)
+                        if len(value) == 3 and location_key(dict(zip(HEADERS, validate(*value)))) == location_key(current)]
                     if len(positions) != 1:
-                        raise ValueError("Referência ausente ou duplicada. Atualize os dados.")
+                        raise ValueError("A localização original foi alterada ou está repetida na planilha. Atualize os dados e confira esse cadastro.")
                     number = positions[0]
                     sheet.update(range_name=f"A{number}:C{number}", values=[row], raw=True)
                 st.session_state["saved_location"] = f"Referência {row[0]} salva em {row[1]} / {row[2]}."

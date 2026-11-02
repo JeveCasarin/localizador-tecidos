@@ -13,8 +13,14 @@ def divisions(shelf):
 
 def validate(reference, shelf, division):
     reference = str(reference).strip()
+    shelf = str(shelf).strip().upper()
+    division = str(division).strip().upper()
     if not reference:
         raise ValueError("Informe a referência do tecido.")
     if division not in divisions(shelf):
         raise ValueError("Divisão inválida para essa prateleira.")
     return [reference, shelf, division]
+
+
+def location_key(record):
+    return (record["Referencia"].casefold(), record["Prateleira"], record["Divisao"])
