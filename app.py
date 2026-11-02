@@ -8,7 +8,7 @@ from google.oauth2.service_account import Credentials
 
 from locations import HEADERS, SHELVES, divisions, validate
 
-st.set_page_config(page_title="Localizador de Tecidos", page_icon="🧵", layout="wide")
+st.set_page_config(page_title="Localizador de Tecidos", page_icon="🧵", layout="centered")
 
 
 @st.cache_resource
@@ -44,18 +44,35 @@ def read_rows(sheet):
     return records
 
 
-def draw_shelf(shelf, records, matches):
-    st.markdown(f"**{shelf}**")
-    for letter in "AB":
-        cells = []
-        for division in [d for d in divisions(shelf) if d.startswith(letter)]:
-            occupants = [r["Referencia"] for r in records if r["Prateleira"] == shelf and r["Divisao"] == division]
-            highlighted = any(r["Prateleira"] == shelf and r["Divisao"] == division for r in matches)
-            color = "#b45309" if highlighted else "#334155"
-            title = html.escape(", ".join(occupants) or "Sem referências cadastradas", quote=True)
-            cells.append(f'<div title="{title}" style="flex:1;text-align:center;border:1px solid #94a3b8;border-radius:4px;padding:8px 2px;background:{color};color:white"><b>{division}</b><br><small>{len(occupants)} ref.</small></div>')
-        st.markdown('<div style="display:flex;gap:3px;margin-bottom:4px">' + "".join(cells) + "</div>", unsafe_allow_html=True)
+def location_card(record):
+    reference = html.escape(record["Referencia"])
+    shelf = html.escape(record["Prateleira"])
+    division = html.escape(record["Divisao"])
+    position = "Parte de cima" if record["Divisao"].startswith("A") else "Parte de baixo"
+    st.markdown(
+        f'<div class="location-card"><div class="reference">Ref. {reference}</div>'
+        f'<div class="location-values"><div>Prateleira<strong>{shelf}</strong></div>'
+        f'<div>Divisão<strong>{division}</strong></div></div>'
+        f'<div class="position">{position}</div></div>',
+        unsafe_allow_html=True,
+    )
 
+
+st.markdown("""
+<style>
+.block-container {max-width: 720px; padding-top: 2rem; padding-bottom: 2rem;}
+h1 {font-size: clamp(1.6rem, 6vw, 2.2rem) !important;}
+.location-card {border: 1px solid #64748b; border-radius: 16px; padding: 20px; margin: 12px 0;}
+.reference {font-size: 1.1rem; font-weight: 600; overflow-wrap: anywhere;}
+.location-values {display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 16px;}
+.location-values strong {display: block; font-size: 2.3rem; line-height: 1.3;}
+.position {margin-top: 12px; opacity: .75;}
+[data-testid="stButton"] button, [data-testid="stDownloadButton"] button {min-height: 48px;}
+@media (max-width: 600px) {
+    .block-container {padding-left: 1rem; padding-right: 1rem;}
+}
+</style>
+""", unsafe_allow_html=True)
 
 st.title("🧵 Localizador de Tecidos")
 st.caption("Encontre a prateleira e a divisão de cada referência.")
@@ -71,31 +88,22 @@ except Exception as error:
         st.warning(str(error))
     st.stop()
 
-if st.button("Atualizar dados da planilha"):
-    st.rerun()
-
-search_tab, register_tab, list_tab = st.tabs(["🔎 Buscar tecido", "➕ Cadastrar / alterar", "📋 Referências cadastradas"])
-with search_tab:
+page = st.selectbox("O que deseja fazer?", ["🔎 Buscar tecido", "➕ Cadastrar / alterar", "📋 Referências cadastradas"])
+if page == "🔎 Buscar tecido":
     query = st.text_input("Referência do tecido", placeholder="Ex.: 80802825").strip()
     matches = [r for r in records if query.casefold() in r["Referencia"].casefold()] if query else []
     if query:
         if matches:
             for record in matches:
-                st.success(f"Referência {record['Referencia']} → Prateleira {record['Prateleira']} · Divisão {record['Divisao']}")
+                location_card(record)
         else:
             st.warning("Nenhuma referência encontrada.")
-    st.subheader("Mapa das prateleiras")
-    st.caption("A = parte de cima · B = parte de baixo. Os resultados da busca aparecem em laranja. A contagem em cada divisão indica referências cadastradas, não quantidade de tecido.")
-    for group in [["P7", "P6", "P5", "P4", "P3", "P2", "P1"], ["P8", "P9"], ["P10", "P11", "P12", "P13", "P14"]]:
-        columns = st.columns(len(group))
-        for column, shelf in zip(columns, group):
-            with column:
-                draw_shelf(shelf, records, matches)
-        st.write("")
+    else:
+        st.caption("Digite a referência e pressione Enter ou concluir no teclado do celular.")
 
-with register_tab:
+elif page == "➕ Cadastrar / alterar":
     st.caption("Uma localização por referência. Uma divisão pode guardar várias referências. Para mover um tecido, escolha alterar e selecione sua referência.")
-    mode = st.radio("Operação", ["Cadastrar", "Alterar localização"], horizontal=True)
+    mode = st.radio("Operação", ["Cadastrar", "Alterar localização"], horizontal=False)
     if mode == "Alterar localização" and not records:
         st.info("Cadastre a primeira referência para poder alterar sua localização.")
     else:
@@ -108,7 +116,7 @@ with register_tab:
         shelf = st.selectbox("Prateleira", SHELVES, index=SHELVES.index(current["Prateleira"]) if current else 0, key=f"shelf_{mode}_{reference if current else ''}")
         options = divisions(shelf)
         division = st.selectbox("Divisão", options, index=options.index(current["Divisao"]) if current and current["Divisao"] in options else 0, key=f"division_{mode}_{shelf}_{reference if current else ''}")
-        if st.button("Salvar localização", type="primary"):
+        if st.button("Salvar localização", type="primary", use_container_width=True):
             try:
                 row = validate(reference, shelf, division)
                 latest = read_rows(sheet)
@@ -137,13 +145,19 @@ with register_tab:
     if "saved_location" in st.session_state:
         st.success(st.session_state.pop("saved_location"))
 
-with list_tab:
+elif page == "📋 Referências cadastradas":
     selected = st.selectbox("Filtrar por prateleira", ["Todas"] + SHELVES)
     visible = [r for r in records if selected == "Todas" or r["Prateleira"] == selected]
     st.caption(f"{len(visible)} referência(s)")
-    st.dataframe(visible, use_container_width=True, hide_index=True)
+    if not visible:
+        st.info("Nenhuma referência cadastrada nesta seleção.")
+    for record in visible:
+        location_card(record)
     output = io.StringIO()
     writer = csv.DictWriter(output, fieldnames=HEADERS)
     writer.writeheader()
     writer.writerows(records)
     st.download_button("Baixar cadastro completo (CSV)", output.getvalue().encode("utf-8-sig"), "referencias_tecidos.csv", "text/csv")
+
+if st.button("Atualizar dados", use_container_width=True):
+    st.rerun()
