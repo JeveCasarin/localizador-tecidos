@@ -8,7 +8,7 @@ from google.oauth2.service_account import Credentials
 
 from locations import HEADERS, SHELVES, validate, plan_save, plan_release
 
-st.set_page_config(page_title="HOMEM.COM | Tecidos", page_icon="🧵", layout="centered")
+st.set_page_config(page_title="HOMEM.COM | Depósito", page_icon="🧵", layout="centered")
 
 
 @st.cache_resource
