@@ -323,6 +323,6 @@ with st.expander("Adicionar à tela inicial do celular"):
     st.write("Toque nos três pontos (⋮) → Adicionar à tela inicial → Criar atalho, se aparecer → Adicionar.")
     st.markdown("**iPhone · Safari**")
     st.write("Abra o menu Compartilhar → Adicionar à Tela de Início → Adicionar. Se necessário, abra Mais (…) para encontrar Compartilhar.")
-    st.caption("Nome sugerido: HOMEM.COM Tecidos. O atalho abre este sistema e precisa de internet.")
+    st.caption("Nome sugerido: HOMEM.COM Depósito. O atalho abre este sistema e precisa de internet.")
     st.link_button("Abrir o endereço do aplicativo", "https://localizador-tecidos-53bjg3qephcjhefjrsrduv.streamlit.app/", use_container_width=True)
     st.markdown("[Ajuda Android](https://support.google.com/chrome/answer/15085120?co=GENIE.Platform%3DAndroid&hl=pt-BR) · [Ajuda iPhone](https://support.apple.com/pt-br/guide/iphone/iph42ab2f3a7/ios)")
