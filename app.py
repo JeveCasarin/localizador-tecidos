@@ -238,21 +238,21 @@ def render_page():
 
     if page == "Buscar":
         st.title("Onde está o tecido?")
-        st.caption("Busque a referência para encontrar todas as localizações.")
+        st.caption("Digite a referência completa para encontrar suas localizações.")
         with st.form("search_form"):
             typed_query = st.text_input("Referência do tecido", placeholder="Ex.: 10331", key="search_input")
             submitted = st.form_submit_button("Buscar tecido", type="primary", use_container_width=True)
         if submitted:
             st.session_state["active_query"] = typed_query.strip()
         query = st.session_state.get("active_query", "")
-        matches = [r for r in records if query.casefold() in r["Referencia"].casefold()] if query else []
+        matches = [r for r in records if query.casefold() == r["Referencia"].strip().casefold()] if query else []
         if query:
             if matches:
                 st.subheader(f"Encontrado em {len(matches)} {'local' if len(matches) == 1 else 'locais'}")
                 for index, record in enumerate(matches):
                     location_card(record, action_key=f"release_search_{index}")
             else:
-                st.warning("Nenhuma referência encontrada.")
+                st.warning("Referência não encontrada. Confira se digitou o código completo.")
         else:
             st.caption("Informe a referência acima e toque em Buscar tecido.")
 
