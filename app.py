@@ -67,6 +67,40 @@ def show_save_error(error):
         st.error(f"Não foi possível confirmar a gravação ({type(error).__name__}). Confira os cadastros antes de tentar novamente.")
 
 
+@st.dialog("Substituir tecido?", dismissible=False)
+def confirm_replacement():
+    pending = st.session_state.get("pending_replacement")
+    if not pending:
+        st.info("Este aviso não está mais ativo. Volte ao cadastro para conferir os dados.")
+        if st.button("Voltar ao cadastro", use_container_width=True):
+            st.rerun()
+        return
+    plan = pending["plan"]
+    row = plan["row"]
+    st.warning(f"A divisão {row[1]} / {row[2]} já está ocupada.")
+    st.text("Referência atual: " + ", ".join(plan["replaced"]))
+    st.text("Substituir pela referência: " + row[0])
+    st.caption("Somente esta divisão será substituída. As outras localizações serão mantidas.")
+    origin = pending["draft"][4]
+    if origin and origin[1:] != tuple(row[1:]):
+        st.caption(f"A origem {origin[1]} / {origin[2]} ficará livre.")
+    st.write("Deseja confirmar a substituição?")
+    if st.button("Confirmar substituição", type="primary", use_container_width=True,
+        disabled=pending.get("invalid", False)):
+        try:
+            sheet = connect()
+            if sheet.get_all_values() != pending["values"]:
+                pending["invalid"] = True
+                raise ValueError("Os dados mudaram. Cancele este aviso e toque em Salvar cadastro novamente para revisar a localização atual.")
+            apply_plan(sheet, plan)
+            st.rerun()
+        except Exception as error:
+            show_save_error(error)
+    if st.button("Cancelar", use_container_width=True):
+        st.session_state.pop("pending_replacement", None)
+        st.rerun()
+
+
 def location_card(record):
     reference = html.escape(record["Referencia"])
     shelf = html.escape(record["Prateleira"])
@@ -206,28 +240,6 @@ def render_page():
                         st.rerun()
                 except Exception as error:
                     show_save_error(error)
-            pending = st.session_state.get("pending_replacement")
-            if pending:
-                plan = pending["plan"]
-                with st.container(border=True):
-                    st.warning(f"Divisão {plan['row'][1]} / {plan['row'][2]} já cadastrada. Deseja substituir?")
-                    st.write("Referência(s) atual(is): " + ", ".join(plan["replaced"]))
-                    st.write("Nova referência: " + plan["row"][0])
-                    st.caption("A referência anterior sairá apenas desta divisão. As outras localizações serão mantidas.")
-                    if current and (current["Prateleira"], current["Divisao"]) != tuple(plan["row"][1:]):
-                        st.caption(f"A origem {current['Prateleira']} / {current['Divisao']} ficará livre.")
-                    if st.button("Confirmar substituição", type="primary", use_container_width=True):
-                        try:
-                            if sheet.get_all_values() != pending["values"]:
-                                st.session_state.pop("pending_replacement", None)
-                                raise ValueError("Os dados da planilha mudaram. Toque em Salvar cadastro novamente para conferir a ocupação atual antes de confirmar.")
-                            apply_plan(sheet, plan)
-                            st.rerun()
-                        except Exception as error:
-                            show_save_error(error)
-                    if st.button("Cancelar", use_container_width=True):
-                        st.session_state.pop("pending_replacement", None)
-                        st.rerun()
         if "saved_location" in st.session_state:
             st.success(st.session_state.pop("saved_location"))
 
@@ -249,3 +261,5 @@ def render_page():
 
 
 render_page()
+if page == "Cadastrar" and st.session_state.get("pending_replacement"):
+    confirm_replacement()
