@@ -6,7 +6,7 @@ import gspread
 import streamlit as st
 from google.oauth2.service_account import Credentials
 
-from locations import HEADERS, SHELVES, validate, location_key, plan_save, plan_release
+from locations import HEADERS, SHELVES, validate, plan_save, plan_release
 
 st.set_page_config(page_title="HOMEM.COM | Tecidos", page_icon="🧵", layout="centered")
 
@@ -81,9 +81,6 @@ def confirm_replacement():
     st.text("Referência atual: " + ", ".join(plan["replaced"]))
     st.text("Substituir pela referência: " + row[0])
     st.caption("Somente esta divisão será substituída. As outras localizações serão mantidas.")
-    origin = pending["draft"][4]
-    if origin and origin[1:] != tuple(row[1:]):
-        st.caption(f"A origem {origin[1]} / {origin[2]} ficará livre.")
     st.write("Deseja confirmar a substituição?")
     if st.button("Confirmar substituição", type="primary", use_container_width=True,
         disabled=pending.get("invalid", False)):
@@ -259,47 +256,31 @@ def render_page():
     elif page == "Cadastrar":
         st.title("Cadastrar localização")
         st.caption("Cada divisão guarda uma referência. A mesma referência pode ocupar várias divisões. Se o destino estiver ocupado, você poderá confirmar a substituição.")
-        mode = st.radio("Operação", ["Cadastrar", "Alterar localização"], horizontal=False)
-        if mode == "Alterar localização" and not records:
-            st.info("Cadastre a primeira referência para poder alterar sua localização.")
-        else:
-            current = None
-            if mode == "Alterar localização":
-                reference = st.text_input("Referência que deseja alterar", key="edit_reference").strip()
-                candidates = [r for r in records if r["Referencia"].casefold() == reference.casefold()]
-                if candidates:
-                    current = st.radio("Qual localização deseja alterar?", candidates,
-                        format_func=lambda r: f"{r['Prateleira']} / {r['Divisao']}")
-                elif reference:
-                    st.info("Referência não encontrada. Use Cadastrar para adicionar.")
-            else:
-                reference = st.text_input("Referência do tecido", placeholder="Ex.: 10331", key="new_reference")
-            edit_key = "_".join(location_key(current)) if current else "new"
-            shelf = st.text_input("Prateleira", value=current["Prateleira"] if current else "", placeholder="Ex.: p1", key=f"shelf_{mode}_{edit_key}")
-            division = st.text_input("Divisão", value=current["Divisao"] if current else "", placeholder="Ex.: a1", key=f"division_{mode}_{edit_key}")
-            st.caption("P1 e P2: A1–A4 ou B1–B4. P3 a P14: A1–A5 ou B1–B5.")
-            draft = (mode, reference.strip(), shelf.strip().upper(), division.strip().upper(),
-                location_key(current) if current else None)
-            pending = st.session_state.get("pending_replacement")
-            if pending and pending["draft"] != draft:
-                st.session_state.pop("pending_replacement", None)
-                pending = None
-            if st.button("Salvar cadastro", type="primary", use_container_width=True,
-                disabled=(mode == "Alterar localização" and current is None) or pending is not None):
-                try:
-                    row = validate(reference, shelf, division)
-                    values = sheet.get_all_values()
-                    plan = plan_save(values, row, current)
-                    if plan["replaced"]:
-                        st.session_state["pending_replacement"] = {
-                            "draft": draft, "values": values, "plan": plan,
-                        }
-                        st.rerun()
-                    else:
-                        apply_plan(sheet, plan)
-                        st.rerun()
-                except Exception as error:
-                    show_save_error(error)
+        reference = st.text_input("Referência do tecido", placeholder="Ex.: 10331", key="new_reference")
+        shelf = st.text_input("Prateleira", placeholder="Ex.: p1", key="new_shelf")
+        division = st.text_input("Divisão", placeholder="Ex.: a1", key="new_division")
+        st.caption("P1 e P2: A1–A4 ou B1–B4. P3 a P14: A1–A5 ou B1–B5.")
+        draft = ("Cadastrar", reference.strip(), shelf.strip().upper(), division.strip().upper(), None)
+        pending = st.session_state.get("pending_replacement")
+        if pending and pending["draft"] != draft:
+            st.session_state.pop("pending_replacement", None)
+            pending = None
+        if st.button("Salvar cadastro", type="primary", use_container_width=True,
+            disabled=pending is not None):
+            try:
+                row = validate(reference, shelf, division)
+                values = sheet.get_all_values()
+                plan = plan_save(values, row)
+                if plan["replaced"]:
+                    st.session_state["pending_replacement"] = {
+                        "draft": draft, "values": values, "plan": plan,
+                    }
+                    st.rerun()
+                else:
+                    apply_plan(sheet, plan)
+                    st.rerun()
+            except Exception as error:
+                show_save_error(error)
         if "saved_location" in st.session_state:
             st.success(st.session_state.pop("saved_location"))
 
