@@ -56,3 +56,21 @@ def plan_save(values, row, current=None):
             updates.append({"range": f"A{number}:C{number}", "values": [["", "", ""]]})
     return {"row": row, "updates": updates, "append": destination is None,
         "replaced": [record["Referencia"] for _, record in displaced]}
+
+
+def plan_release(values, current):
+    """Libera somente a divisão escolhida, incluindo eventuais registros antigos."""
+    occupants = []
+    for number, cells in enumerate(values[1:], start=2):
+        if any(cells):
+            record = dict(zip(HEADERS, validate(*cells)))
+            if (record["Prateleira"], record["Divisao"]) == (current["Prateleira"], current["Divisao"]):
+                occupants.append((number, record))
+    if not any(location_key(record) == location_key(current) for _, record in occupants):
+        raise ValueError("Este cadastro mudou ou já foi removido. Confira a divisão novamente.")
+    return {
+        "shelf": current["Prateleira"], "division": current["Divisao"],
+        "references": [record["Referencia"] for _, record in occupants],
+        "updates": [{"range": f"A{number}:C{number}", "values": [["", "", ""]]}
+            for number, _ in occupants],
+    }

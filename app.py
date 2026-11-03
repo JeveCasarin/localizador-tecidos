@@ -6,7 +6,7 @@ import gspread
 import streamlit as st
 from google.oauth2.service_account import Credentials
 
-from locations import HEADERS, SHELVES, validate, location_key, plan_save
+from locations import HEADERS, SHELVES, validate, location_key, plan_save, plan_release
 
 st.set_page_config(page_title="HOMEM.COM | Tecidos", page_icon="🧵", layout="centered")
 
@@ -101,7 +101,39 @@ def confirm_replacement():
         st.rerun()
 
 
-def location_card(record):
+@st.dialog("Liberar divisão?", dismissible=False)
+def confirm_release():
+    pending = st.session_state.get("pending_release")
+    if not pending:
+        if st.button("Voltar", use_container_width=True):
+            st.rerun()
+        return
+    plan = pending["plan"]
+    st.warning(f"Deseja liberar a divisão {plan['shelf']} / {plan['division']}?")
+    st.text("Referência(s): " + ", ".join(plan["references"]))
+    st.write("Este cadastro será removido e a divisão ficará livre.")
+    st.caption("As outras divisões e localizações desta referência serão mantidas.")
+    if pending.get("invalid"):
+        st.error("Os dados mudaram. Cancele e confira a divisão novamente.")
+    if st.button("Confirmar liberação", type="primary", use_container_width=True,
+        disabled=pending.get("invalid", False)):
+        try:
+            sheet = connect()
+            if sheet.get_all_values() != pending["values"]:
+                pending["invalid"] = True
+                raise ValueError("Os dados mudaram. Cancele este aviso e confira o cadastro antes de liberar.")
+            sheet.batch_update(plan["updates"], raw=True)
+            st.session_state.pop("pending_release", None)
+            st.session_state["release_success"] = f"Divisão {plan['shelf']} / {plan['division']} liberada."
+            st.rerun()
+        except Exception as error:
+            show_save_error(error)
+    if st.button("Cancelar", use_container_width=True):
+        st.session_state.pop("pending_release", None)
+        st.rerun()
+
+
+def location_card(record, action_key=None):
     reference = html.escape(record["Referencia"])
     shelf = html.escape(record["Prateleira"])
     division = html.escape(record["Divisao"])
@@ -113,6 +145,16 @@ def location_card(record):
         f'<div class="position">Prateleira {shelf[1:]} · {position} · Espaço {division[1:]}</div></div>',
         unsafe_allow_html=True,
     )
+
+    if action_key is not None and st.button("Liberar divisão", key=action_key, use_container_width=True):
+        try:
+            values = connect().get_all_values()
+            plan = plan_release(values, record)
+            st.session_state.pop("pending_replacement", None)
+            st.session_state["pending_release"] = {"values": values, "plan": plan}
+            st.rerun()
+        except Exception as error:
+            show_save_error(error)
 
 
 st.markdown("""
@@ -146,6 +188,7 @@ if "navigation" not in st.session_state:
 
 
 def change_page(destination):
+    st.session_state.pop("pending_release", None)
     st.session_state.pop("pending_replacement", None)
     st.session_state["navigation"] = destination
 
@@ -162,7 +205,7 @@ if page != "Cadastrar":
     st.caption("Dados atualizados automaticamente a cada 30 segundos.")
 
 
-@st.fragment(run_every="30s" if page != "Cadastrar" else None)
+@st.fragment(run_every="30s" if page != "Cadastrar" and not st.session_state.get("pending_release") else None)
 def render_page():
     try:
         sheet = connect()
@@ -175,6 +218,9 @@ def render_page():
         if isinstance(error, ValueError):
             st.warning(str(error))
         st.stop()
+
+    if "release_success" in st.session_state:
+        st.success(st.session_state.pop("release_success"))
 
     if page == "Buscar":
         st.title("Onde está o tecido?")
@@ -189,8 +235,8 @@ def render_page():
         if query:
             if matches:
                 st.subheader(f"Encontrado em {len(matches)} {'local' if len(matches) == 1 else 'locais'}")
-                for record in matches:
-                    location_card(record)
+                for index, record in enumerate(matches):
+                    location_card(record, action_key=f"release_search_{index}")
             else:
                 st.warning("Nenhuma referência encontrada.")
         else:
@@ -250,8 +296,8 @@ def render_page():
         st.caption(f"{len(visible)} localização(ões) cadastrada(s)")
         if not visible:
             st.info("Nenhuma referência cadastrada nesta seleção.")
-        for record in visible:
-            location_card(record)
+        for index, record in enumerate(visible):
+            location_card(record, action_key=f"release_list_{index}")
         output = io.StringIO()
         writer = csv.DictWriter(output, fieldnames=HEADERS)
         writer.writeheader()
@@ -263,3 +309,15 @@ def render_page():
 render_page()
 if page == "Cadastrar" and st.session_state.get("pending_replacement"):
     confirm_replacement()
+elif st.session_state.get("pending_release"):
+    confirm_release()
+
+with st.expander("Adicionar à tela inicial do celular"):
+    st.write("Abra este aplicativo no navegador do seu celular e siga os passos abaixo.")
+    st.markdown("**Android · Google Chrome**")
+    st.write("Toque nos três pontos (⋮) → Adicionar à tela inicial → Criar atalho, se aparecer → Adicionar.")
+    st.markdown("**iPhone · Safari**")
+    st.write("Abra o menu Compartilhar → Adicionar à Tela de Início → Adicionar. Se necessário, abra Mais (…) para encontrar Compartilhar.")
+    st.caption("Nome sugerido: HOMEM.COM Tecidos. O atalho abre este sistema e precisa de internet.")
+    st.link_button("Abrir o endereço do aplicativo", "https://localizador-tecidos-53bjg3qephcjhefjrsrduv.streamlit.app/", use_container_width=True)
+    st.markdown("[Ajuda Android](https://support.google.com/chrome/answer/15085120?co=GENIE.Platform%3DAndroid&hl=pt-BR) · [Ajuda iPhone](https://support.apple.com/pt-br/guide/iphone/iph42ab2f3a7/ios)")
