@@ -51,7 +51,15 @@ def apply_plan(sheet, plan):
         sheet.batch_update(plan["updates"], raw=True)
     row = plan["row"]
     st.session_state["saved_location"] = f"Referência {row[0]} salva em {row[1]} / {row[2]}."
+    # Limpa no próximo rerun, antes de recriar os campos do formulário.
+    st.session_state["clear_registration"] = True
     st.session_state.pop("pending_replacement", None)
+
+
+def clear_saved_registration():
+    if st.session_state.pop("clear_registration", False):
+        for key in ("new_reference", "new_shelf", "new_division"):
+            st.session_state[key] = ""
 
 
 def show_save_error(error):
@@ -254,6 +262,7 @@ def render_page():
             st.caption("Informe a referência acima e toque em Buscar tecido.")
 
     elif page == "Cadastrar":
+        clear_saved_registration()
         st.title("Cadastrar localização")
         st.caption("Cada divisão guarda uma referência. A mesma referência pode ocupar várias divisões. Se o destino estiver ocupado, você poderá confirmar a substituição.")
         reference = st.text_input("Referência do tecido", placeholder="Ex.: 10331", key="new_reference")
