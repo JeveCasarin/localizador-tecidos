@@ -138,23 +138,27 @@ def location_card(record, action_key=None):
     shelf = html.escape(record["Prateleira"])
     division = html.escape(record["Divisao"])
     position = "Parte de cima" if record["Divisao"].startswith("A") else "Parte de baixo"
-    st.markdown(
+    card_html = (
         f'<div class="location-card"><div class="reference">Ref. {reference}</div>'
         f'<div class="location-values"><div>Prateleira<strong>{shelf}</strong></div>'
         f'<div>Divisão<strong>{division}</strong></div></div>'
-        f'<div class="position">Prateleira {shelf[1:]} · {position} · Espaço {division[1:]}</div></div>',
-        unsafe_allow_html=True,
+        f'<div class="position">Prateleira {shelf[1:]} · {position} · Espaço {division[1:]}</div></div>'
     )
-
-    if action_key is not None and st.button("Liberar divisão", key=action_key, use_container_width=True):
-        try:
-            values = connect().get_all_values()
-            plan = plan_release(values, record)
-            st.session_state.pop("pending_replacement", None)
-            st.session_state["pending_release"] = {"values": values, "plan": plan}
-            st.rerun()
-        except Exception as error:
-            show_save_error(error)
+    if action_key is None:
+        st.markdown(card_html, unsafe_allow_html=True)
+        return
+    with st.container(key=f"location_item_{action_key}"):
+        st.markdown(card_html, unsafe_allow_html=True)
+        if st.button("", icon=":material/delete:", help="Liberar esta divisão",
+            key=action_key, type="tertiary"):
+            try:
+                values = connect().get_all_values()
+                plan = plan_release(values, record)
+                st.session_state.pop("pending_replacement", None)
+                st.session_state["pending_release"] = {"values": values, "plan": plan}
+                st.rerun()
+            except Exception as error:
+                show_save_error(error)
 
 
 st.markdown("""
@@ -162,6 +166,16 @@ st.markdown("""
 .block-container {max-width: 720px; padding-top: 2rem; padding-bottom: 2rem;}
 h1 {font-size: clamp(1.6rem, 6vw, 2.2rem) !important;}
 .location-card {border: 1px solid #334155; background: #161e2c; color: #f1f5f9; border-left: 5px solid #2563eb; border-radius: 16px; padding: 20px; margin: 12px 0;}
+[class*="st-key-location_item_"] {position: relative; gap: 0 !important;}
+[class*="st-key-location_item_"] .reference {padding-right: 48px;}
+[class*="st-key-location_item_"] [data-testid="stElementContainer"]:has(> [data-testid="stButton"]) {
+    position: absolute; top: 22px; right: 10px; width: 44px; z-index: 2;
+}
+[class*="st-key-location_item_"] [data-testid="stButton"] button {
+    min-height: 44px; height: 44px; width: 44px; padding: 0; color: #f87171;
+    border-radius: 10px;
+}
+[class*="st-key-location_item_"] [data-testid="stButton"] button:hover {background: #7f1d1d33; color: #fca5a5;}
 .reference {font-size: 1.1rem; font-weight: 600; overflow-wrap: anywhere;}
 .location-values {display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 16px;}
 .location-values strong {display: block; font-size: 2.3rem; line-height: 1.3;}
