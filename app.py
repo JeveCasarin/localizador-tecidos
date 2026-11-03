@@ -6,7 +6,7 @@ import gspread
 import streamlit as st
 from google.oauth2.service_account import Credentials
 
-from locations import HEADERS, SHELVES, validate, location_key
+from locations import HEADERS, SHELVES, validate, location_key, plan_save
 
 st.set_page_config(page_title="HOMEM.COM | Tecidos", page_icon="🧵", layout="centered")
 
@@ -39,6 +39,32 @@ def read_rows(sheet):
         clean = validate(reference, shelf, division)
         records.append(dict(zip(HEADERS, clean)))
     return records
+
+
+def apply_plan(sheet, plan):
+    if plan["append"]:
+        if not sheet.get_all_values():
+            sheet.update(range_name="A1:C1", values=[HEADERS], raw=True)
+        sheet.append_row(plan["row"], value_input_option="RAW", table_range="A:C")
+    else:
+        # A substituição e a liberação da origem são enviadas na mesma requisição.
+        sheet.batch_update(plan["updates"], raw=True)
+    row = plan["row"]
+    st.session_state["saved_location"] = f"Referência {row[0]} salva em {row[1]} / {row[2]}."
+    st.session_state.pop("pending_replacement", None)
+
+
+def show_save_error(error):
+    if isinstance(error, ValueError):
+        st.error(str(error))
+    elif isinstance(error, gspread.exceptions.APIError):
+        status = error.response.status_code
+        if status == 403:
+            st.error("O Google recusou a gravação (HTTP 403). Confira a permissão de Editor e a proteção da aba.")
+        else:
+            st.error(f"Falha ao salvar (HTTP {status}). Confira os cadastros antes de tentar novamente.")
+    else:
+        st.error(f"Não foi possível confirmar a gravação ({type(error).__name__}). Confira os cadastros antes de tentar novamente.")
 
 
 def location_card(record):
@@ -86,6 +112,7 @@ if "navigation" not in st.session_state:
 
 
 def change_page(destination):
+    st.session_state.pop("pending_replacement", None)
     st.session_state["navigation"] = destination
 
 
@@ -137,7 +164,7 @@ def render_page():
 
     elif page == "Cadastrar":
         st.title("Cadastrar localização")
-        st.caption("Uma referência pode estar em várias localizações. Cadastre cada localização separadamente. Para mover um tecido, altere somente a localização desejada.")
+        st.caption("Cada divisão guarda uma referência. A mesma referência pode ocupar várias divisões. Se o destino estiver ocupado, você poderá confirmar a substituição.")
         mode = st.radio("Operação", ["Cadastrar", "Alterar localização"], horizontal=False)
         if mode == "Alterar localização" and not records:
             st.info("Cadastre a primeira referência para poder alterar sua localização.")
@@ -157,44 +184,50 @@ def render_page():
             shelf = st.text_input("Prateleira", value=current["Prateleira"] if current else "", placeholder="Ex.: p1", key=f"shelf_{mode}_{edit_key}")
             division = st.text_input("Divisão", value=current["Divisao"] if current else "", placeholder="Ex.: a1", key=f"division_{mode}_{edit_key}")
             st.caption("P1 e P2: A1–A4 ou B1–B4. P3 a P14: A1–A5 ou B1–B5.")
-            if st.button("Salvar cadastro", type="primary", use_container_width=True, disabled=mode == "Alterar localização" and current is None):
+            draft = (mode, reference.strip(), shelf.strip().upper(), division.strip().upper(),
+                location_key(current) if current else None)
+            pending = st.session_state.get("pending_replacement")
+            if pending and pending["draft"] != draft:
+                st.session_state.pop("pending_replacement", None)
+                pending = None
+            if st.button("Salvar cadastro", type="primary", use_container_width=True,
+                disabled=(mode == "Alterar localização" and current is None) or pending is not None):
                 try:
                     row = validate(reference, shelf, division)
-                    latest = read_rows(sheet)
-                    target = dict(zip(HEADERS, row))
-                    existing = next((r for r in latest if location_key(r) == location_key(target)), None)
-                    if mode == "Cadastrar":
-                        if existing:
-                            raise ValueError("Essa referência já está cadastrada nessa prateleira e divisão. Informe outra localização.")
-                        if not sheet.get_all_values():
-                            sheet.update(range_name="A1:C1", values=[HEADERS], raw=True)
-                        sheet.append_row(row, value_input_option="RAW", table_range="A:C")
+                    values = sheet.get_all_values()
+                    plan = plan_save(values, row, current)
+                    if plan["replaced"]:
+                        st.session_state["pending_replacement"] = {
+                            "draft": draft, "values": values, "plan": plan,
+                        }
+                        st.rerun()
                     else:
-                        if existing and location_key(existing) != location_key(current):
-                            raise ValueError("Essa referência já está cadastrada na localização de destino.")
-                        values = sheet.get_all_values()
-                        positions = [i for i, value in enumerate(values[1:], start=2)
-                            if len(value) == 3 and location_key(dict(zip(HEADERS, validate(*value)))) == location_key(current)]
-                        if len(positions) != 1:
-                            raise ValueError("A localização original foi alterada ou está repetida na planilha. Atualize os dados e confira esse cadastro.")
-                        number = positions[0]
-                        sheet.update(range_name=f"A{number}:C{number}", values=[row], raw=True)
-                    st.session_state["saved_location"] = f"Referência {row[0]} salva em {row[1]} / {row[2]}."
-                    st.rerun()
-                except ValueError as error:
-                    st.error(str(error))
-                except gspread.exceptions.APIError as error:
-                    status = error.response.status_code
-                    if status == 403:
-                        st.error("O Google recusou a gravação (HTTP 403). Compartilhe a planilha com o client_email da conta de serviço como Editor e confira se a aba ou as células estão protegidas.")
-                    elif status == 401:
-                        st.error("Credencial recusada (HTTP 401). Confira a nova chave nos Secrets e reinicie o aplicativo.")
-                    elif status == 429:
-                        st.error("Limite temporário do Google Sheets (HTTP 429). Aguarde um minuto e atualize os dados antes de tentar novamente.")
-                    else:
-                        st.error(f"O Google Sheets retornou HTTP {status} ao salvar. Atualize os dados e confira se a referência foi gravada antes de repetir.")
+                        apply_plan(sheet, plan)
+                        st.rerun()
                 except Exception as error:
-                    st.error(f"Não foi possível confirmar a gravação ({type(error).__name__}). Atualize os dados e confira se a referência foi gravada antes de repetir.")
+                    show_save_error(error)
+            pending = st.session_state.get("pending_replacement")
+            if pending:
+                plan = pending["plan"]
+                with st.container(border=True):
+                    st.warning(f"Divisão {plan['row'][1]} / {plan['row'][2]} já cadastrada. Deseja substituir?")
+                    st.write("Referência(s) atual(is): " + ", ".join(plan["replaced"]))
+                    st.write("Nova referência: " + plan["row"][0])
+                    st.caption("A referência anterior sairá apenas desta divisão. As outras localizações serão mantidas.")
+                    if current and (current["Prateleira"], current["Divisao"]) != tuple(plan["row"][1:]):
+                        st.caption(f"A origem {current['Prateleira']} / {current['Divisao']} ficará livre.")
+                    if st.button("Confirmar substituição", type="primary", use_container_width=True):
+                        try:
+                            if sheet.get_all_values() != pending["values"]:
+                                st.session_state.pop("pending_replacement", None)
+                                raise ValueError("Os dados da planilha mudaram. Toque em Salvar cadastro novamente para conferir a ocupação atual antes de confirmar.")
+                            apply_plan(sheet, plan)
+                            st.rerun()
+                        except Exception as error:
+                            show_save_error(error)
+                    if st.button("Cancelar", use_container_width=True):
+                        st.session_state.pop("pending_replacement", None)
+                        st.rerun()
         if "saved_location" in st.session_state:
             st.success(st.session_state.pop("saved_location"))
 
