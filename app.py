@@ -6,7 +6,7 @@ import gspread
 import streamlit as st
 from google.oauth2.service_account import Credentials
 
-from locations import HEADERS, SHELVES, validate, plan_save, plan_release
+from locations import HEADERS, SHELVES, validate, plan_save, plan_release, table_entries, plan_observation, location_key
 
 st.set_page_config(page_title="HOMEM.COM | Depósito", page_icon="🧵", layout="centered")
 
@@ -24,31 +24,16 @@ def connect():
 
 
 def read_rows(sheet):
-    values = sheet.get_all_values()
-    if not values:
-        return []
-    if values[0] != HEADERS:
-        raise ValueError("A primeira linha da aba deve conter: Referencia | Prateleira | Divisao. Use uma aba nova, exclusiva para este projeto.")
-    records = []
-    for number, row in enumerate(values[1:], start=2):
-        if not any(row):
-            continue
-        if len(row) != 3:
-            raise ValueError(f"Confira a linha {number}: ela deve ter três campos preenchidos.")
-        reference, shelf, division = row
-        clean = validate(reference, shelf, division)
-        records.append(dict(zip(HEADERS, clean)))
-    return records
+    return [record for _, record in table_entries(sheet.get_all_values())]
 
 
 def apply_plan(sheet, plan):
     if plan["append"]:
-        if not sheet.get_all_values():
-            sheet.update(range_name="A1:C1", values=[HEADERS], raw=True)
-        sheet.append_row(plan["row"], value_input_option="RAW", table_range="A:C")
+        sheet.update(range_name="A1:D1", values=[HEADERS], raw=True)
+        sheet.append_row(plan["row"], value_input_option="RAW", table_range="A:D")
     else:
         # A substituição e a liberação da origem são enviadas na mesma requisição.
-        sheet.batch_update(plan["updates"], raw=True)
+        sheet.batch_update([{"range": "A1:D1", "values": [HEADERS]}] + plan["updates"], raw=True)
     row = plan["row"]
     st.session_state["saved_location"] = f"Referência {row[0]} salva em {row[1]} / {row[2]}."
     # Limpa no próximo rerun, antes de recriar os campos do formulário.
@@ -58,7 +43,7 @@ def apply_plan(sheet, plan):
 
 def clear_saved_registration():
     if st.session_state.pop("clear_registration", False):
-        for key in ("new_reference", "new_shelf", "new_division"):
+        for key in ("new_reference", "new_shelf", "new_division", "new_observation"):
             st.session_state[key] = ""
 
 
@@ -106,64 +91,120 @@ def confirm_replacement():
         st.rerun()
 
 
-@st.dialog("Liberar divisão?", dismissible=False)
-def confirm_release():
-    pending = st.session_state.get("pending_release")
-    if not pending:
-        if st.button("Voltar", use_container_width=True):
-            st.rerun()
-        return
-    plan = pending["plan"]
-    st.warning(f"Deseja liberar a divisão {plan['shelf']} / {plan['division']}?")
-    st.text("Referência(s): " + ", ".join(plan["references"]))
-    st.write("Este cadastro será removido e a divisão ficará livre.")
-    st.caption("As outras divisões e localizações desta referência serão mantidas.")
-    if pending.get("invalid"):
-        st.error("Os dados mudaram. Cancele e confira a divisão novamente.")
-    if st.button("Confirmar liberação", type="primary", use_container_width=True,
-        disabled=pending.get("invalid", False)):
-        try:
-            sheet = connect()
-            if sheet.get_all_values() != pending["values"]:
-                pending["invalid"] = True
-                raise ValueError("Os dados mudaram. Cancele este aviso e confira o cadastro antes de liberar.")
-            sheet.batch_update(plan["updates"], raw=True)
-            st.session_state.pop("pending_release", None)
-            st.session_state["release_success"] = f"Divisão {plan['shelf']} / {plan['division']} liberada."
-            st.rerun()
-        except Exception as error:
-            show_save_error(error)
-    if st.button("Cancelar", use_container_width=True):
-        st.session_state.pop("pending_release", None)
-        st.rerun()
+def close_details():
+    st.session_state.pop("details", None)
 
 
-def location_card(record, action_key=None):
+def location_card(record):
     reference = html.escape(record["Referencia"])
     shelf = html.escape(record["Prateleira"])
     division = html.escape(record["Divisao"])
     position = "Parte de cima" if record["Divisao"].startswith("A") else "Parte de baixo"
-    card_html = (
+    observation = html.escape(record.get("Observacao", "")).replace("\n", "<br>")
+    note = f'<div class="observation"><b>Observação</b><br>{observation}</div>' if observation else ""
+    st.markdown(
         f'<div class="location-card"><div class="reference">Ref. {reference}</div>'
         f'<div class="location-values"><div>Prateleira<strong>{shelf}</strong></div>'
         f'<div>Divisão<strong>{division}</strong></div></div>'
-        f'<div class="position">Prateleira {shelf[1:]} · {position} · Espaço {division[1:]}</div></div>'
+        f'<div class="position">Prateleira {shelf[1:]} · {position} · Espaço {division[1:]}</div>{note}</div>',
+        unsafe_allow_html=True,
     )
-    if action_key is None:
-        st.markdown(card_html, unsafe_allow_html=True)
+
+
+def open_details(query=None, record=None):
+    st.session_state["details"] = {"query": query, "selected": record, "view": "results"}
+    st.rerun()
+
+
+@st.dialog("Localização do tecido", dismissible=True, on_dismiss=close_details)
+def show_details():
+    details = st.session_state.get("details")
+    if not details:
         return
-    with st.container(key=f"location_item_{action_key}"):
-        st.markdown(card_html, unsafe_allow_html=True)
-        if st.button("", icon=":material/delete:", help="Liberar esta divisão",
-            key=action_key, type="tertiary"):
+    try:
+        sheet = connect()
+        values = sheet.get_all_values()
+        records = [record for _, record in table_entries(values)]
+    except Exception as error:
+        show_save_error(error)
+        return
+    view = details.get("view", "results")
+    if view == "release":
+        pending = details["release"]
+        plan = pending["plan"]
+        st.warning(f"Liberar a divisão {plan['shelf']} / {plan['division']}?")
+        st.text("Referência(s): " + ", ".join(plan["references"]))
+        st.caption("O cadastro e a observação desta divisão serão removidos. As outras localizações serão mantidas.")
+        if pending.get("invalid"):
+            st.error("Os dados mudaram. Volte e confira a divisão novamente.")
+        if st.button("Confirmar liberação", type="primary", use_container_width=True,
+            disabled=pending.get("invalid", False)):
             try:
-                values = connect().get_all_values()
-                plan = plan_release(values, record)
-                st.session_state.pop("pending_replacement", None)
-                st.session_state["pending_release"] = {"values": values, "plan": plan}
+                if sheet.get_all_values() != pending["values"]:
+                    pending["invalid"] = True
+                    raise ValueError("Os dados mudaram. Volte e confira o cadastro antes de liberar.")
+                sheet.batch_update(plan["updates"], raw=True)
+                details["view"] = "results"
+                details.pop("release", None)
+                details["message"] = f"Divisão {plan['shelf']} / {plan['division']} liberada."
                 st.rerun()
             except Exception as error:
                 show_save_error(error)
+        if st.button("Voltar", use_container_width=True):
+            details["view"] = "results"
+            details.pop("release", None)
+            st.rerun()
+        return
+    if view == "observation":
+        current = details["editing"]
+        st.text(f"Observação de {current['Prateleira']} / {current['Divisao']} · Ref. {current['Referencia']}")
+        with st.form("edit_observation"):
+            note = st.text_area("Observação desta divisão", value=current.get("Observacao", ""),
+                help="Deixe vazio para remover a observação.")
+            save = st.form_submit_button("Salvar observação", type="primary", use_container_width=True)
+        if save:
+            try:
+                updates = plan_observation(sheet.get_all_values(), current, note)
+                sheet.batch_update(updates, raw=True)
+                details["view"] = "results"
+                details["message"] = "Observação salva."
+                st.rerun()
+            except Exception as error:
+                show_save_error(error)
+        if st.button("Voltar sem salvar", use_container_width=True):
+            details["view"] = "results"
+            st.rerun()
+        return
+    if details.get("message"):
+        st.success(details.pop("message"))
+    query = details.get("query")
+    selected = details.get("selected")
+    if query:
+        matches = [r for r in records if r["Referencia"].casefold() == query.casefold()]
+        st.text(f"Referência: {query}")
+    else:
+        matches = [r for r in records if location_key(r) == location_key(selected)] if selected else []
+    if not matches:
+        st.info("Não há mais cadastros desta referência na localização consultada.")
+    else:
+        st.caption(f"Encontrado em {len(matches)} {'local' if len(matches) == 1 else 'locais'}")
+    for index, record in enumerate(matches):
+        location_card(record)
+        if st.button("Editar observação", key=f"note_{index}", use_container_width=True):
+            details["editing"] = record
+            details["view"] = "observation"
+            st.rerun()
+        if st.button("", icon=":material/delete:", help=f"Liberar {record['Prateleira']} / {record['Divisao']}",
+            key=f"release_detail_{index}", type="tertiary"):
+            try:
+                latest = sheet.get_all_values()
+                plan = plan_release(latest, record)
+                details["release"] = {"values": latest, "plan": plan}
+                details["view"] = "release"
+                st.rerun()
+            except Exception as error:
+                show_save_error(error)
+    st.caption("Feche pelo X ou toque fora desta janela.")
 
 
 st.markdown("""
@@ -171,16 +212,7 @@ st.markdown("""
 .block-container {max-width: 720px; padding-top: 2rem; padding-bottom: 2rem;}
 h1 {font-size: clamp(1.6rem, 6vw, 2.2rem) !important;}
 .location-card {border: 1px solid #334155; background: #161e2c; color: #f1f5f9; border-left: 5px solid #2563eb; border-radius: 16px; padding: 20px; margin: 12px 0;}
-[class*="st-key-location_item_"] {position: relative; gap: 0 !important;}
-[class*="st-key-location_item_"] .reference {padding-right: 48px;}
-[class*="st-key-location_item_"] [data-testid="stElementContainer"]:has(> [data-testid="stButton"]) {
-    position: absolute; top: 22px; right: 10px; width: 44px; z-index: 2;
-}
-[class*="st-key-location_item_"] [data-testid="stButton"] button {
-    min-height: 44px; height: 44px; width: 44px; padding: 0; color: #f87171;
-    border-radius: 10px;
-}
-[class*="st-key-location_item_"] [data-testid="stButton"] button:hover {background: #7f1d1d33; color: #fca5a5;}
+.observation {margin-top: 16px; padding: 12px; border-radius: 8px; background: #f59e0b18; border: 1px solid #b7791f; color: #fde68a; overflow-wrap: anywhere;}
 .reference {font-size: 1.1rem; font-weight: 600; overflow-wrap: anywhere;}
 .location-values {display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 16px;}
 .location-values strong {display: block; font-size: 2.3rem; line-height: 1.3;}
@@ -207,7 +239,7 @@ if "navigation" not in st.session_state:
 
 
 def change_page(destination):
-    st.session_state.pop("pending_release", None)
+    close_details()
     st.session_state.pop("pending_replacement", None)
     st.session_state["navigation"] = destination
 
@@ -224,7 +256,7 @@ if page != "Cadastrar":
     st.caption("Dados atualizados automaticamente a cada 30 segundos.")
 
 
-@st.fragment(run_every="30s" if page != "Cadastrar" and not st.session_state.get("pending_release") else None)
+@st.fragment(run_every="30s" if page != "Cadastrar" and not st.session_state.get("details") else None)
 def render_page():
     try:
         sheet = connect()
@@ -248,19 +280,16 @@ def render_page():
             typed_query = st.text_input("Referência do tecido", placeholder="Ex.: 10331", key="search_input")
             submitted = st.form_submit_button("Buscar tecido", type="primary", use_container_width=True)
         if submitted:
-            st.session_state["active_query"] = typed_query.strip()
-        query = st.session_state.get("active_query", "")
-        matches = [r for r in records if query.casefold() == r["Referencia"].strip().casefold()] if query else []
-        if query:
-            if matches:
-                st.text(f"Referência pesquisada: {query}")
-                st.subheader(f"Encontrado em {len(matches)} {'local' if len(matches) == 1 else 'locais'}")
-                for index, record in enumerate(matches):
-                    location_card(record, action_key=f"release_search_{index}")
+            query = typed_query.strip()
+            if query:
+                matches = [r for r in records if query.casefold() == r["Referencia"].casefold()]
+                if matches:
+                    open_details(query=query)
+                else:
+                    st.warning(f"Referência {query} não encontrada. Confira o código completo.")
             else:
-                st.warning(f"Referência {query} não encontrada. Confira se digitou o código completo.")
-        else:
-            st.caption("Informe a referência acima e toque em Buscar tecido.")
+                st.info("Digite a referência completa para buscar.")
+        st.caption("Toque em Buscar tecido para ver as localizações e observações.")
 
     elif page == "Cadastrar":
         clear_saved_registration()
@@ -269,8 +298,10 @@ def render_page():
         reference = st.text_input("Referência do tecido", placeholder="Ex.: 10331", key="new_reference")
         shelf = st.text_input("Prateleira", placeholder="Ex.: p1", key="new_shelf")
         division = st.text_input("Divisão", placeholder="Ex.: a1", key="new_division")
+        observation = st.text_area("Observação desta divisão (opcional)", key="new_observation",
+            placeholder="Ex.: Conferir tonalidade antes de usar.")
         st.caption("P1 e P2: A1–A4 ou B1–B4. P3 a P14: A1–A5 ou B1–B5.")
-        draft = ("Cadastrar", reference.strip(), shelf.strip().upper(), division.strip().upper(), None)
+        draft = ("Cadastrar", reference.strip(), shelf.strip().upper(), division.strip().upper(), observation.strip())
         pending = st.session_state.get("pending_replacement")
         if pending and pending["draft"] != draft:
             st.session_state.pop("pending_replacement", None)
@@ -278,7 +309,7 @@ def render_page():
         if st.button("Salvar cadastro", type="primary", use_container_width=True,
             disabled=pending is not None):
             try:
-                row = validate(reference, shelf, division)
+                row = validate(reference, shelf, division, observation)
                 values = sheet.get_all_values()
                 plan = plan_save(values, row)
                 if plan["replaced"]:
@@ -302,7 +333,9 @@ def render_page():
         if not visible:
             st.info("Nenhuma referência cadastrada nesta seleção.")
         for index, record in enumerate(visible):
-            location_card(record, action_key=f"release_list_{index}")
+            location_card(record)
+            if st.button("Observação / liberar divisão", key=f"details_list_{index}", use_container_width=True):
+                open_details(record=record)
         output = io.StringIO()
         writer = csv.DictWriter(output, fieldnames=HEADERS)
         writer.writeheader()
@@ -314,8 +347,8 @@ def render_page():
 render_page()
 if page == "Cadastrar" and st.session_state.get("pending_replacement"):
     confirm_replacement()
-elif st.session_state.get("pending_release"):
-    confirm_release()
+elif st.session_state.get("details"):
+    show_details()
 
 with st.expander("Adicionar à tela inicial do celular"):
     st.write("Abra este aplicativo no navegador do seu celular e siga os passos abaixo.")
