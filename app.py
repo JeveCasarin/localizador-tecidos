@@ -332,6 +332,11 @@ def render_page():
         st.title("Consultar cadastros")
         selected = st.selectbox("Filtrar por prateleira", ["Todas"] + SHELVES)
         visible = [r for r in records if selected == "Todas" or r["Prateleira"] == selected]
+        visible.sort(key=lambda record: (
+            int(record["Prateleira"][1:]),
+            record["Divisao"][0],
+            int(record["Divisao"][1:]),
+        ))
         st.caption(f"{len(visible)} localização(ões) cadastrada(s)")
         if not visible:
             st.info("Nenhuma referência cadastrada nesta seleção.")
