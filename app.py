@@ -185,23 +185,32 @@ st.markdown("""
 .block-container {max-width: 720px; padding-top: 2rem; padding-bottom: 2rem;}
 h1 {font-size: clamp(1.6rem, 6vw, 2.2rem) !important;}
 .location-card {border: 1px solid #334155; background: #161e2c; color: #f1f5f9; border-left: 5px solid #2563eb; border-radius: 16px; padding: 20px; margin: 12px 0;}
-[class*="st-key-release_actions_"] [data-testid="stButton"] {display: flex; justify-content: flex-end;}
+[class*="st-key-release_actions_"],
+[class*="st-key-release_actions_"] [data-testid="stElementContainer"] {width: 100% !important;}
+[class*="st-key-release_actions_"] [data-testid="stButton"] {
+    display: flex !important; width: 100% !important; justify-content: flex-end !important;
+}
 [class*="st-key-release_actions_"] [data-testid="stButton"] button {
-    width: 48px; min-height: 48px; padding: 0; color: #f87171; border-radius: 10px;
+    width: 48px; min-height: 48px; padding: 0; color: #f87171; border-radius: 10px; margin-left: auto;
 }
 [class*="st-key-release_actions_"] [data-testid="stButton"] button:hover {
     color: #fca5a5; background-color: #7f1d1d33;
 }
+[data-testid="stDialog"]:has(.compact-popup-marker) {
+    align-items: center !important; justify-content: center !important;
+    padding-top: 16px !important; padding-bottom: 16px !important;
+}
 [role="dialog"]:has(.compact-popup-marker) {
     background: #161e2c; border: 1px solid #334155; border-left: 4px solid #2563eb;
-    border-radius: 16px; padding: 0; overflow: hidden;
+    border-radius: 16px; padding: 0; max-height: calc(100dvh - 48px); overflow-y: auto;
 }
 [role="dialog"]:has(.compact-popup-marker) [slot="title"] {display: none;}
 [role="dialog"]:has(.compact-popup-marker) > div:last-child {padding: 22px 18px 8px;}
 [role="dialog"]:has(.compact-popup-marker) [data-testid="stElementContainer"]:has(.compact-popup-marker) {display: none;}
 [role="dialog"]:has(.compact-popup-marker) [data-testid="stDialogHeader"] {min-height: 0; padding: 0;}
 [role="dialog"]:has(.compact-popup-marker) [aria-label="Close"] {
-    position: absolute; top: 4px; right: 4px; color: #f8fafc; z-index: 10;
+    position: absolute; top: 12px; right: 12px; color: #f8fafc; z-index: 10;
+    width: 36px; height: 36px;
 }
 [role="dialog"]:has(.compact-popup-marker) .location-card {
     border: 0; border-radius: 0; background: transparent; padding: 0; margin: 0;
