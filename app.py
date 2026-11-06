@@ -160,13 +160,11 @@ def show_details():
     selected = details.get("selected")
     if query:
         matches = [r for r in records if r["Referencia"].casefold() == query.casefold()]
-        st.text(f"Referência: {query}")
     else:
         matches = [r for r in records if location_key(r) == location_key(selected)] if selected else []
     if not matches:
         st.info("Não há mais cadastros desta referência na localização consultada.")
-    else:
-        st.caption(f"Encontrado em {len(matches)} {'local' if len(matches) == 1 else 'locais'}")
+    st.markdown('<span class="compact-popup-marker"></span>', unsafe_allow_html=True)
     for index, record in enumerate(matches):
         location_card(record)
         with st.container(key=f"release_actions_{index}"):
@@ -180,7 +178,6 @@ def show_details():
                     st.rerun()
                 except Exception as error:
                     show_save_error(error)
-    st.caption("Feche pelo X ou toque fora desta janela.")
 
 
 st.markdown("""
@@ -195,6 +192,25 @@ h1 {font-size: clamp(1.6rem, 6vw, 2.2rem) !important;}
 [class*="st-key-release_actions_"] [data-testid="stButton"] button:hover {
     color: #fca5a5; background-color: #7f1d1d33;
 }
+[role="dialog"]:has(.compact-popup-marker) {
+    background: #161e2c; border: 1px solid #334155; border-left: 4px solid #2563eb;
+    border-radius: 16px; padding: 0; overflow: hidden;
+}
+[role="dialog"]:has(.compact-popup-marker) [slot="title"] {display: none;}
+[role="dialog"]:has(.compact-popup-marker) > div:last-child {padding: 22px 18px 8px;}
+[role="dialog"]:has(.compact-popup-marker) [data-testid="stElementContainer"]:has(.compact-popup-marker) {display: none;}
+[role="dialog"]:has(.compact-popup-marker) [data-testid="stDialogHeader"] {min-height: 0; padding: 0;}
+[role="dialog"]:has(.compact-popup-marker) [aria-label="Close"] {
+    position: absolute; top: 4px; right: 4px; color: #f8fafc; z-index: 10;
+}
+[role="dialog"]:has(.compact-popup-marker) .location-card {
+    border: 0; border-radius: 0; background: transparent; padding: 0; margin: 0;
+}
+[role="dialog"]:has(.compact-popup-marker) .reference {padding-right: 32px;}
+[role="dialog"]:has(.compact-popup-marker) [class*="st-key-release_actions_"] {
+    margin-top: -8px;
+}
+[role="dialog"]:has(.compact-popup-marker) [class*="st-key-release_actions_"] button {color: #f87171;}
 .reference {font-size: 1.1rem; font-weight: 600; overflow-wrap: anywhere;}
 .location-values {display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 16px;}
 .location-values strong {display: block; font-size: 2.3rem; line-height: 1.3;}
