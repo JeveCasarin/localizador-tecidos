@@ -169,16 +169,17 @@ def show_details():
         st.caption(f"Encontrado em {len(matches)} {'local' if len(matches) == 1 else 'locais'}")
     for index, record in enumerate(matches):
         location_card(record)
-        if st.button("", icon=":material/delete:", help=f"Liberar {record['Prateleira']} / {record['Divisao']}",
-            key=f"release_detail_{index}", type="tertiary"):
-            try:
-                latest = sheet.get_all_values()
-                plan = plan_release(latest, record)
-                details["release"] = {"values": latest, "plan": plan}
-                details["view"] = "release"
-                st.rerun()
-            except Exception as error:
-                show_save_error(error)
+        with st.container(key=f"release_actions_{index}"):
+            if st.button("", icon=":material/delete:", help=f"Liberar {record['Prateleira']} / {record['Divisao']}",
+                key=f"release_detail_{index}", type="tertiary"):
+                try:
+                    latest = sheet.get_all_values()
+                    plan = plan_release(latest, record)
+                    details["release"] = {"values": latest, "plan": plan}
+                    details["view"] = "release"
+                    st.rerun()
+                except Exception as error:
+                    show_save_error(error)
     st.caption("Feche pelo X ou toque fora desta janela.")
 
 
@@ -187,6 +188,13 @@ st.markdown("""
 .block-container {max-width: 720px; padding-top: 2rem; padding-bottom: 2rem;}
 h1 {font-size: clamp(1.6rem, 6vw, 2.2rem) !important;}
 .location-card {border: 1px solid #334155; background: #161e2c; color: #f1f5f9; border-left: 5px solid #2563eb; border-radius: 16px; padding: 20px; margin: 12px 0;}
+[class*="st-key-release_actions_"] [data-testid="stButton"] {display: flex; justify-content: flex-end;}
+[class*="st-key-release_actions_"] [data-testid="stButton"] button {
+    width: 48px; min-height: 48px; padding: 0; color: #f87171; border-radius: 10px;
+}
+[class*="st-key-release_actions_"] [data-testid="stButton"] button:hover {
+    color: #fca5a5; background-color: #7f1d1d33;
+}
 .reference {font-size: 1.1rem; font-weight: 600; overflow-wrap: anywhere;}
 .location-values {display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 16px;}
 .location-values strong {display: block; font-size: 2.3rem; line-height: 1.3;}
