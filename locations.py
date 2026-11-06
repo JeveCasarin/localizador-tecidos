@@ -1,6 +1,6 @@
 """Regras das prateleiras, independentes da interface e do Google Sheets."""
 
-HEADERS = ["Referencia", "Prateleira", "Divisao", "Observacao"]
+HEADERS = ["Referencia", "Prateleira", "Divisao"]
 SHELVES = [f"P{i}" for i in range(1, 15)]
 
 
@@ -11,7 +11,7 @@ def divisions(shelf):
     return [f"{row}{i}" for row in "AB" for i in range(1, count + 1)]
 
 
-def validate(reference, shelf, division, observation=""):
+def validate(reference, shelf, division):
     reference = str(reference).strip()
     shelf = str(shelf).strip().upper()
     division = str(division).strip().upper()
@@ -19,21 +19,21 @@ def validate(reference, shelf, division, observation=""):
         raise ValueError("Informe a referência do tecido.")
     if division not in divisions(shelf):
         raise ValueError("Divisão inválida para essa prateleira.")
-    return [reference, shelf, division, str(observation).strip()]
+    return [reference, shelf, division]
 
 
 def table_entries(values):
     if not values:
         return []
-    if values[0] not in (HEADERS, HEADERS[:3]):
-        raise ValueError("A primeira linha deve conter: Referencia | Prateleira | Divisao | Observacao. Não altere as três primeiras colunas.")
+    if values[0] not in (HEADERS, HEADERS + ["Observacao"]):
+        raise ValueError("A primeira linha deve conter: Referencia | Prateleira | Divisao. Não altere as três primeiras colunas.")
     entries = []
     for number, cells in enumerate(values[1:], start=2):
-        if not any(cells):
+        if not any(cells[:3]):
             continue
         if len(cells) > 4 or len(cells) < 3:
             raise ValueError(f"Confira os campos da linha {number} da planilha.")
-        entries.append((number, dict(zip(HEADERS, validate(*cells)))))
+        entries.append((number, dict(zip(HEADERS, validate(*cells[:3])))))
     return entries
 
 
@@ -60,12 +60,12 @@ def plan_save(values, row, current=None):
     destination = occupants[0][0] if occupants else source
     updates = []
     if destination is not None:
-        updates.append({"range": f"A{destination}:D{destination}", "values": [row]})
+        updates.append({"range": f"A{destination}:C{destination}", "values": [row]})
         clear_rows = {number for number, _ in occupants if number != destination}
         if source is not None and source != destination:
             clear_rows.add(source)
         for number in sorted(clear_rows):
-            updates.append({"range": f"A{number}:D{number}", "values": [["", "", "", ""]]})
+            updates.append({"range": f"A{number}:C{number}", "values": [["", "", ""]]})
     return {"row": row, "updates": updates, "append": destination is None,
         "replaced": [record["Referencia"] for _, record in displaced]}
 
@@ -79,16 +79,7 @@ def plan_release(values, current):
     return {
         "shelf": current["Prateleira"], "division": current["Divisao"],
         "references": [record["Referencia"] for _, record in occupants],
-        "updates": [{"range": f"A{number}:D{number}", "values": [["", "", "", ""]]}
+        "updates": [{"range": f"A{number}:C{number}", "values": [["", "", ""]]}
             for number, _ in occupants],
     }
 
-
-def plan_observation(values, current, observation):
-    matches = [(number, record) for number, record in table_entries(values)
-        if location_key(record) == location_key(current)]
-    if len(matches) != 1 or matches[0][1] != current:
-        raise ValueError("Este cadastro mudou. Volte e abra a localização novamente antes de editar.")
-    number, _ = matches[0]
-    return [{"range": "A1:D1", "values": [HEADERS]},
-        {"range": f"D{number}", "values": [[str(observation).strip()]]}]

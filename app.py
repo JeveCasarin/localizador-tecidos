@@ -6,7 +6,7 @@ import gspread
 import streamlit as st
 from google.oauth2.service_account import Credentials
 
-from locations import HEADERS, SHELVES, validate, plan_save, plan_release, table_entries, plan_observation, location_key
+from locations import HEADERS, SHELVES, validate, plan_save, plan_release, table_entries, location_key
 
 st.set_page_config(page_title="HOMEM.COM | Depósito", page_icon="🧵", layout="centered")
 
@@ -29,11 +29,12 @@ def read_rows(sheet):
 
 def apply_plan(sheet, plan):
     if plan["append"]:
-        sheet.update(range_name="A1:D1", values=[HEADERS], raw=True)
-        sheet.append_row(plan["row"], value_input_option="RAW", table_range="A:D")
+        if not sheet.get_all_values():
+            sheet.update(range_name="A1:C1", values=[HEADERS], raw=True)
+        sheet.append_row(plan["row"], value_input_option="RAW", table_range="A:C")
     else:
         # A substituição e a liberação da origem são enviadas na mesma requisição.
-        sheet.batch_update([{"range": "A1:D1", "values": [HEADERS]}] + plan["updates"], raw=True)
+        sheet.batch_update(plan["updates"], raw=True)
     row = plan["row"]
     st.session_state["saved_location"] = f"Referência {row[0]} salva em {row[1]} / {row[2]}."
     # Limpa no próximo rerun, antes de recriar os campos do formulário.
@@ -43,7 +44,7 @@ def apply_plan(sheet, plan):
 
 def clear_saved_registration():
     if st.session_state.pop("clear_registration", False):
-        for key in ("new_reference", "new_shelf", "new_division", "new_observation"):
+        for key in ("new_reference", "new_shelf", "new_division"):
             st.session_state[key] = ""
 
 
@@ -100,13 +101,11 @@ def location_card(record):
     shelf = html.escape(record["Prateleira"])
     division = html.escape(record["Divisao"])
     position = "Parte de cima" if record["Divisao"].startswith("A") else "Parte de baixo"
-    observation = html.escape(record.get("Observacao", "")).replace("\n", "<br>")
-    note = f'<div class="observation"><b>Observação</b><br>{observation}</div>' if observation else ""
     st.markdown(
         f'<div class="location-card"><div class="reference">Ref. {reference}</div>'
         f'<div class="location-values"><div>Prateleira<strong>{shelf}</strong></div>'
         f'<div>Divisão<strong>{division}</strong></div></div>'
-        f'<div class="position">Prateleira {shelf[1:]} · {position} · Espaço {division[1:]}</div>{note}</div>',
+        f'<div class="position">Prateleira {shelf[1:]} · {position} · Espaço {division[1:]}</div></div>',
         unsafe_allow_html=True,
     )
 
@@ -134,7 +133,7 @@ def show_details():
         plan = pending["plan"]
         st.warning(f"Liberar a divisão {plan['shelf']} / {plan['division']}?")
         st.text("Referência(s): " + ", ".join(plan["references"]))
-        st.caption("O cadastro e a observação desta divisão serão removidos. As outras localizações serão mantidas.")
+        st.caption("O cadastro desta divisão será removido. As outras localizações serão mantidas.")
         if pending.get("invalid"):
             st.error("Os dados mudaram. Volte e confira a divisão novamente.")
         if st.button("Confirmar liberação", type="primary", use_container_width=True,
@@ -155,26 +154,6 @@ def show_details():
             details.pop("release", None)
             st.rerun()
         return
-    if view == "observation":
-        current = details["editing"]
-        st.text(f"Observação de {current['Prateleira']} / {current['Divisao']} · Ref. {current['Referencia']}")
-        with st.form("edit_observation"):
-            note = st.text_area("Observação desta divisão", value=current.get("Observacao", ""),
-                help="Deixe vazio para remover a observação.")
-            save = st.form_submit_button("Salvar observação", type="primary", use_container_width=True)
-        if save:
-            try:
-                updates = plan_observation(sheet.get_all_values(), current, note)
-                sheet.batch_update(updates, raw=True)
-                details["view"] = "results"
-                details["message"] = "Observação salva."
-                st.rerun()
-            except Exception as error:
-                show_save_error(error)
-        if st.button("Voltar sem salvar", use_container_width=True):
-            details["view"] = "results"
-            st.rerun()
-        return
     if details.get("message"):
         st.success(details.pop("message"))
     query = details.get("query")
@@ -190,10 +169,6 @@ def show_details():
         st.caption(f"Encontrado em {len(matches)} {'local' if len(matches) == 1 else 'locais'}")
     for index, record in enumerate(matches):
         location_card(record)
-        if st.button("Editar observação", key=f"note_{index}", use_container_width=True):
-            details["editing"] = record
-            details["view"] = "observation"
-            st.rerun()
         if st.button("", icon=":material/delete:", help=f"Liberar {record['Prateleira']} / {record['Divisao']}",
             key=f"release_detail_{index}", type="tertiary"):
             try:
@@ -212,7 +187,6 @@ st.markdown("""
 .block-container {max-width: 720px; padding-top: 2rem; padding-bottom: 2rem;}
 h1 {font-size: clamp(1.6rem, 6vw, 2.2rem) !important;}
 .location-card {border: 1px solid #334155; background: #161e2c; color: #f1f5f9; border-left: 5px solid #2563eb; border-radius: 16px; padding: 20px; margin: 12px 0;}
-.observation {margin-top: 16px; padding: 12px; border-radius: 8px; background: #f59e0b18; border: 1px solid #b7791f; color: #fde68a; overflow-wrap: anywhere;}
 .reference {font-size: 1.1rem; font-weight: 600; overflow-wrap: anywhere;}
 .location-values {display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 16px;}
 .location-values strong {display: block; font-size: 2.3rem; line-height: 1.3;}
@@ -289,7 +263,7 @@ def render_page():
                     st.warning(f"Referência {query} não encontrada. Confira o código completo.")
             else:
                 st.info("Digite a referência completa para buscar.")
-        st.caption("Toque em Buscar tecido para ver as localizações e observações.")
+        st.caption("Toque em Buscar tecido para ver as localizações.")
 
     elif page == "Cadastrar":
         clear_saved_registration()
@@ -298,10 +272,8 @@ def render_page():
         reference = st.text_input("Referência do tecido", placeholder="Ex.: 10331", key="new_reference")
         shelf = st.text_input("Prateleira", placeholder="Ex.: p1", key="new_shelf")
         division = st.text_input("Divisão", placeholder="Ex.: a1", key="new_division")
-        observation = st.text_area("Observação desta divisão (opcional)", key="new_observation",
-            placeholder="Ex.: Conferir tonalidade antes de usar.")
         st.caption("P1 e P2: A1–A4 ou B1–B4. P3 a P14: A1–A5 ou B1–B5.")
-        draft = ("Cadastrar", reference.strip(), shelf.strip().upper(), division.strip().upper(), observation.strip())
+        draft = ("Cadastrar", reference.strip(), shelf.strip().upper(), division.strip().upper())
         pending = st.session_state.get("pending_replacement")
         if pending and pending["draft"] != draft:
             st.session_state.pop("pending_replacement", None)
@@ -309,7 +281,7 @@ def render_page():
         if st.button("Salvar cadastro", type="primary", use_container_width=True,
             disabled=pending is not None):
             try:
-                row = validate(reference, shelf, division, observation)
+                row = validate(reference, shelf, division)
                 values = sheet.get_all_values()
                 plan = plan_save(values, row)
                 if plan["replaced"]:
@@ -334,7 +306,7 @@ def render_page():
             st.info("Nenhuma referência cadastrada nesta seleção.")
         for index, record in enumerate(visible):
             location_card(record)
-            if st.button("Observação / liberar divisão", key=f"details_list_{index}", use_container_width=True):
+            if st.button("Ver localização", key=f"details_list_{index}", use_container_width=True):
                 open_details(record=record)
         output = io.StringIO()
         writer = csv.DictWriter(output, fieldnames=HEADERS)
