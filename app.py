@@ -166,18 +166,22 @@ def show_details():
         st.info("Não há mais cadastros desta referência na localização consultada.")
     st.markdown('<span class="compact-popup-marker"></span>', unsafe_allow_html=True)
     for index, record in enumerate(matches):
-        location_card(record)
-        with st.container(key=f"release_actions_{index}"):
-            if st.button("", icon=":material/delete:", help=f"Liberar {record['Prateleira']} / {record['Divisao']}",
-                key=f"release_detail_{index}", type="tertiary"):
-                try:
-                    latest = sheet.get_all_values()
-                    plan = plan_release(latest, record)
-                    details["release"] = {"values": latest, "plan": plan}
-                    details["view"] = "release"
-                    st.rerun()
-                except Exception as error:
-                    show_save_error(error)
+        with st.container(key=f"detail_card_{index}"):
+            location_card(record)
+            with st.container(key=f"release_actions_{index}"):
+                if st.button("", icon=":material/delete:", help=f"Liberar {record['Prateleira']} / {record['Divisao']}",
+                    key=f"release_detail_{index}", type="tertiary"):
+                    try:
+                        latest = sheet.get_all_values()
+                        plan = plan_release(latest, record)
+                        details["release"] = {"values": latest, "plan": plan}
+                        details["view"] = "release"
+                        st.rerun()
+                    except Exception as error:
+                        show_save_error(error)
+    if st.button("OK", type="primary", use_container_width=True):
+        close_details()
+        st.rerun()
 
 
 st.markdown("""
@@ -185,16 +189,17 @@ st.markdown("""
 .block-container {max-width: 720px; padding-top: 2rem; padding-bottom: 2rem;}
 h1 {font-size: clamp(1.6rem, 6vw, 2.2rem) !important;}
 .location-card {border: 1px solid #334155; background: #161e2c; color: #f1f5f9; border-left: 5px solid #2563eb; border-radius: 16px; padding: 20px; margin: 12px 0;}
-[class*="st-key-release_actions_"],
-[class*="st-key-release_actions_"] [data-testid="stElementContainer"] {width: 100% !important;}
-[class*="st-key-release_actions_"] [data-testid="stButton"] {
-    display: flex !important; width: 100% !important; justify-content: flex-end !important;
+[class*="st-key-detail_card_"] {position: relative;}
+[class*="st-key-detail_card_"] .reference {padding-right: 48px !important;}
+[class*="st-key-detail_card_"] [class*="st-key-release_actions_"] {
+    position: absolute !important; top: -10px; right: -4px;
+    width: 48px !important; z-index: 2;
 }
 [class*="st-key-release_actions_"] [data-testid="stButton"] button {
-    width: 48px; min-height: 48px; padding: 0; color: #f87171; border-radius: 10px; margin-left: auto;
+    width: 48px; min-height: 48px; padding: 0; color: #f87171 !important; border-radius: 10px;
 }
 [class*="st-key-release_actions_"] [data-testid="stButton"] button:hover {
-    color: #fca5a5; background-color: #7f1d1d33;
+    color: #fca5a5 !important; background-color: #7f1d1d33;
 }
 [data-testid="stDialog"]:has(.compact-popup-marker) {
     align-items: center !important; justify-content: center !important;
@@ -208,18 +213,11 @@ h1 {font-size: clamp(1.6rem, 6vw, 2.2rem) !important;}
 [role="dialog"]:has(.compact-popup-marker) > div:last-child {padding: 22px 18px 8px;}
 [role="dialog"]:has(.compact-popup-marker) [data-testid="stElementContainer"]:has(.compact-popup-marker) {display: none;}
 [role="dialog"]:has(.compact-popup-marker) [data-testid="stDialogHeader"] {min-height: 0; padding: 0;}
-[role="dialog"]:has(.compact-popup-marker) [aria-label="Close"] {
-    position: absolute; top: 12px; right: 12px; color: #f8fafc; z-index: 10;
-    width: 36px; height: 36px;
-}
+[role="dialog"]:has(.compact-popup-marker) [aria-label="Close"] {display: none;}
 [role="dialog"]:has(.compact-popup-marker) .location-card {
     border: 0; border-radius: 0; background: transparent; padding: 0; margin: 0;
 }
 [role="dialog"]:has(.compact-popup-marker) .reference {padding-right: 32px;}
-[role="dialog"]:has(.compact-popup-marker) [class*="st-key-release_actions_"] {
-    margin-top: -8px;
-}
-[role="dialog"]:has(.compact-popup-marker) [class*="st-key-release_actions_"] button {color: #f87171;}
 .reference {font-size: 1.1rem; font-weight: 600; overflow-wrap: anywhere;}
 .location-values {display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 16px;}
 .location-values strong {display: block; font-size: 2.3rem; line-height: 1.3;}
