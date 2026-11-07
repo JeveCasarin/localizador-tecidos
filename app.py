@@ -260,8 +260,6 @@ with st.container(key="navigation_buttons"):
                 type="primary" if st.session_state["navigation"] == destination else "secondary",
                 use_container_width=True, on_click=change_page, args=(destination,))
 page = st.session_state["navigation"]
-if page != "Cadastrar":
-    st.caption("Dados atualizados automaticamente a cada 30 segundos.")
 
 
 @st.fragment(run_every="30s" if page != "Cadastrar" and not st.session_state.get("details") else None)
