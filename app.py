@@ -204,6 +204,9 @@ h1 {font-size: clamp(1.6rem, 6vw, 2.2rem) !important;}
 [data-testid="stDialog"]:has(.compact-popup-marker) {
     align-items: center !important; justify-content: center !important;
     padding-top: 16px !important; padding-bottom: 16px !important;
+    background-color: rgba(0, 0, 0, 0.72) !important;
+    backdrop-filter: blur(4px);
+    -webkit-backdrop-filter: blur(4px);
 }
 [role="dialog"]:has(.compact-popup-marker) {
     background: #161e2c; border: 1px solid #334155; border-left: 4px solid #2563eb;
@@ -219,6 +222,7 @@ h1 {font-size: clamp(1.6rem, 6vw, 2.2rem) !important;}
 }
 [role="dialog"]:has(.compact-popup-marker) .reference {padding-right: 32px;}
 .reference {font-size: 1.1rem; font-weight: 600; overflow-wrap: anywhere;}
+.search-heading {text-align: center;}
 .location-values {display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 16px;}
 .location-values strong {display: block; font-size: 2.3rem; line-height: 1.3;}
 .position {margin-top: 12px; color: #cbd5e1; font-size: .95rem;}
@@ -280,7 +284,7 @@ def render_page():
         st.success(st.session_state.pop("release_success"))
 
     if page == "Buscar":
-        st.title("Onde está o tecido?")
+        st.markdown('<h1 class="search-heading">Onde está o tecido?</h1>', unsafe_allow_html=True)
         st.caption("Digite a referência completa para encontrar suas localizações.")
         with st.form("search_form", clear_on_submit=True):
             typed_query = st.text_input("Referência do tecido", placeholder="Ex.: 10331", key="search_input")
