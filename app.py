@@ -10,6 +10,9 @@ from locations import HEADERS, SHELVES, validate, plan_save, plan_release, table
 
 st.set_page_config(page_title="HOMEM.COM | Depósito", page_icon="🧵", layout="centered")
 
+PIQUET_REFERENCE = "610143"
+PIQUET_MESSAGE = "Referência 610143 - Piquet Menegotti, deverá ser feita a busca pelo código da cor"
+
 
 @st.cache_resource
 def connect():
@@ -120,6 +123,20 @@ def show_details():
     details = st.session_state.get("details")
     if not details:
         return
+    reference = details.get("query") or (details.get("selected") or {}).get("Referencia")
+    if reference == PIQUET_REFERENCE:
+        st.markdown('<span class="compact-popup-marker"></span>', unsafe_allow_html=True)
+        st.markdown(
+            '<div class="location-card"><div class="reference">Ref. 610143 · Piquet Menegotti</div>'
+            '<div class="position">Disponível nas prateleiras</div>'
+            '<div class="piquet-shelves"><strong>P2</strong><strong>P3</strong><strong>P4</strong></div>'
+            f'<div class="piquet-notice">{html.escape(PIQUET_MESSAGE)}</div></div>',
+            unsafe_allow_html=True,
+        )
+        if st.button("OK", type="primary", use_container_width=True):
+            close_details()
+            st.rerun()
+        return
     try:
         sheet = connect()
         values = sheet.get_all_values()
@@ -222,6 +239,9 @@ h1 {font-size: clamp(1.6rem, 6vw, 2.2rem) !important;}
 }
 [role="dialog"]:has(.compact-popup-marker) .reference {padding-right: 32px;}
 .reference {font-size: 1.1rem; font-weight: 600; overflow-wrap: anywhere;}
+.piquet-shelves {display: flex; gap: 12px; margin: 12px 0 18px; font-size: 1.8rem;}
+.piquet-shelves strong {flex: 1; text-align: center; border: 1px solid #334155; border-radius: 8px; padding: 8px;}
+.piquet-notice {padding: 12px; border-left: 3px solid #f59e0b; background: #f59e0b15; border-radius: 6px; color: #fde68a; line-height: 1.5;}
 .search-heading {text-align: center;}
 .location-values {display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 16px;}
 .location-values strong {display: block; font-size: 2.3rem; line-height: 1.3;}
@@ -293,7 +313,7 @@ def render_page():
             query = typed_query.strip()
             if query:
                 matches = [r for r in records if query.casefold() == r["Referencia"].casefold()]
-                if matches:
+                if matches or query == PIQUET_REFERENCE:
                     open_details(query=query)
                 else:
                     st.warning(f"Referência {query} não encontrada. Confira o código completo.")
